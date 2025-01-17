@@ -1,10 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using OpenCvSharp;
@@ -52,7 +49,6 @@ namespace ss2410
         // ボート番号とボーレートを受け取るパラメータ
         private string portNameFromCombobox;
         private int baudRateFromComboBox;
-        private bool isFirstConnect = true;
 
         public Form1()
         {
@@ -78,10 +74,6 @@ namespace ss2410
             Timer fpsTimer = new Timer { Interval = 1000 };
             fpsTimer.Tick += FpsTimer_Tick;
             fpsTimer.Start();
-
-            // シリアル入力を開始する
-            
-            //isFirstConnect = false;
 
             // カメラを開始する
             Task.Run(() => ShotImage());
@@ -109,21 +101,34 @@ namespace ss2410
             {
                 if (_Serial.IsOpen)
                 {
-                    // シリアル通信が開いている場合は閉じる
-                    _Serial.Close();
-                    button3.Text = "シリアル通信ON";
+                    if (isMouseControlEnabled)
+                    {
+                        // 空中マウスがONの場合
+                        MessageBox.Show("空中マウスをOFFにしてからシリアル通信を切ってください", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    else
+                    {
+                        // シリアル通信をOFFにする
+                        _Serial.Close();
+                        button3.Text = "シリアル通信ON";
+                        label1.Text = "シリアル通信が切られました．[シリアル通信ON]を押して通信を開始できます";
+                        return;
+                    }
                 }
                 else
                 {
-                    // シリアル通信が閉じている場合は開く
+                    // シリアル通信をONにする
                     try
                     {
                         bool isConnect = Connect();
                         if (!isConnect)
                         {
                             MessageBox.Show("Failed to connect to serial port", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
                         }
                         button3.Text = "シリアル通信OFF";
+                        label1.Text = "シリアル通信中です．空中マウスをONにできます";
                     }
                     catch (Exception ex)
                     {
@@ -133,14 +138,18 @@ namespace ss2410
             }
             else
             {
+                // _Serialが初期化されていない場合の処理
                 bool isConnect = Connect();
                 if (!isConnect)
                 {
                     MessageBox.Show("Failed to connect to serial port", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
                 }
                 button3.Text = "シリアル通信OFF";
+                label1.Text = "シリアル通信中です．空中マウスをONにできます";
             }
         }
+
 
         private void Form1_Resize(object sender, EventArgs e)
         {
@@ -246,17 +255,9 @@ namespace ss2410
                             cameraFrameCount++;
 
                             var bitmap = frame.ToBitmap();
-                            mouse_picture.Invoke(new Action(() =>
-                            {
-                                if (mouse_picture.Image != null)
-                                {
-                                    mouse_picture.Image.Dispose();
-                                }
-
-                                mouse_picture.Image = new Bitmap(bitmap);
-                                pictureBoxFrameCount++;
-                            }));
-                        }
+                            await UpdateUI(bitmap, mouse_picture);
+                            pictureBoxFrameCount++;
+                        };
                     }
                 }
             }
@@ -384,7 +385,7 @@ namespace ss2410
                    point.Y >= 0 && point.Y < mouse_picture.Height;
         }
 
-        private void Timer_Tick(object sender, EventArgs e)
+        private async void Timer_Tick(object sender, EventArgs e)
         {
             Bitmap bitmap = new Bitmap(slant_picture.Width, slant_picture.Height);
             using (Graphics g = Graphics.FromImage(bitmap))
@@ -411,7 +412,7 @@ namespace ss2410
                     g.DrawLine(penZ, x1, y1Z, x2, y2Z);
                 }
             }
-            UpdateUI(bitmap, slant_picture);
+            await UpdateUI(bitmap, slant_picture);
         }
 
         private void UpdateMousePoint()
@@ -485,7 +486,7 @@ namespace ss2410
         }
 
         // UIスレッドで画像を更新
-        private async void UpdateUI(Bitmap bitmap, PictureBox pictureName)
+        private async Task UpdateUI(Bitmap bitmap, PictureBox pictureName)
         {
             await Task.Run(() =>
             {
